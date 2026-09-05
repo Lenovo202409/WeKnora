@@ -1,0 +1,45 @@
+name: sync upstream
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch upstream
+        run: |
+          set -e
+          git config user.name "sync-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git remote add upstream https://github.com/Tencent/WeKnora.git 2>/dev/null || true
+          git remote set-url upstream https://github.com/Tencent/WeKnora.git
+          git fetch upstream --tags --prune --force
+
+      - name: Fast-forward default branch
+        run: |
+          git checkout main
+          git merge --ff-only upstream/main || echo "default branch diverged, skip"
+          git push origin main || echo "push main skipped"
+
+      - name: Push upstream tags
+        run: |
+          git push origin --tags --force
+          echo "tag count: $(git tag | wc -l)"
+
+      - name: Mirror upstream branches
+        run: |
+          git for-each-ref --format='%(refname:short)' refs/remotes/upstream \
+            | grep -v '/HEAD$' | sed 's#^upstream/##' \
+            | while read b; do
+                git push origin "refs/remotes/upstream/$b:refs/heads/$b" || echo "skip $b"
+              done
